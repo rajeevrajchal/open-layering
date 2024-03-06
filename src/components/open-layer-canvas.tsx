@@ -5,9 +5,11 @@ import VectorLayer from "ol/layer/Vector";
 import "ol/ol.css";
 import Static from "ol/source/ImageStatic.js";
 import VectorSource from "ol/source/Vector";
+import { getLength } from "ol/sphere.js";
 
 import background from "../assets/snapshot.png";
 
+import { unByKey } from "ol/Observable";
 import { getCenter } from "ol/extent";
 import ImageLayer from "ol/layer/Image";
 import { Projection } from "ol/proj";
@@ -22,21 +24,59 @@ const projection = new Projection({
   extent: extent,
 });
 
+const initialPolygonDrawnCordinated = [
+  [-9853867.336152684, -344777.0856239237],
+  [769083.360481739, 8790161.05395447],
+  [1672531.6249697953, -4416897.789329892],
+  [-9880549.27360671, -392389.0200878959],
+];
+
+const formatLength = function (line: any) {
+  const length = getLength(line);
+  let output;
+  if (length > 100) {
+    output = Math.round((length / 1000) * 100) / 100 + " " + "km";
+  } else {
+    output = Math.round(length * 100) / 100 + " " + "m";
+  }
+  return output;
+};
+
 const OpenLayerCanvas = () => {
   const [canvas, setCanvas] = useState<Map | null>(null);
   const [canvasSource, setCanvasSource] = useState<any>(null);
+  const [drawCanvas, setDrawCanvas] = useState<any>(null);
+  const [snapCanvas, setSnapCanvas] = useState<any>(null);
 
   const mapRef = useRef<any>(null);
 
+  // drawing overlay
   const interactOLCanvas = () => {
-    const draw = new Draw({
-      source: canvasSource,
-      type: method,
+    let listener: any = null;
+    let sketch: any = null;
+    drawCanvas.on("drawstart", function (evt: any) {
+      sketch = evt.feature;
+      listener = sketch.getGeometry().on("change", function (evt: any) {
+        const geom = evt.target;
+        const perimeter = formatLength(geom);
+        console.log("the output is", perimeter);
+      });
     });
-    canvas?.addInteraction(draw);
-    const snap = new Snap({ source: canvasSource });
-    console.log("the snap & draw", { snap, draw });
-    canvas?.addInteraction(snap);
+
+    drawCanvas.on("drawend", function () {
+      sketch = null;
+      unByKey(listener);
+    });
+  };
+
+  const removeSelection = () => {
+    canvasSource.clear();
+  };
+
+  // remove last point
+  const removeLastPoint = () => {
+    drawCanvas.removeLastPoint();
+    snapCanvas.removeLastPoint();
   };
 
   useLayoutEffect(() => {
@@ -44,6 +84,7 @@ const OpenLayerCanvas = () => {
     // const osmLayer = new TileLayer({
     //   source: new OSM(),
     // });
+
     const vector = new VectorLayer({
       source: source,
       style: {
@@ -69,16 +110,24 @@ const OpenLayerCanvas = () => {
       ],
       view: new View({
         center: getCenter(extent),
-
         zoom: 2,
       }),
     });
 
     const modify = new Modify({ source: source });
     map.addInteraction(modify);
+    const draw = new Draw({
+      source: source,
+      type: method,
+    });
+    map.addInteraction(draw);
+    const snap = new Snap({ source: source });
+    map.addInteraction(snap);
     // assignments
     setCanvas(map);
     setCanvasSource(source);
+    setDrawCanvas(draw);
+    setSnapCanvas(snap);
 
     return () => {
       map.setTarget("");
@@ -88,11 +137,17 @@ const OpenLayerCanvas = () => {
   }, []);
 
   return (
-    <div
-      ref={mapRef}
-      style={{ width: "100%", height: "80vh" }}
-      onMouseOver={interactOLCanvas}
-    />
+    <div>
+      <div>
+        <button onClick={() => removeLastPoint()}>Remove Last Point</button>
+        <button onClick={() => removeSelection()}>Clear selection</button>
+      </div>
+      <div
+        ref={mapRef}
+        style={{ width: "100%", height: "80vh" }}
+        onMouseEnter={interactOLCanvas}
+      />
+    </div>
   );
 };
 
